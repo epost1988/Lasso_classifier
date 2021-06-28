@@ -1,0 +1,7 @@
+Current issues: unable to upload the counttable csv files required to run the dataset. Datafiles can be downloaded from my google drive:
+
+Files can be downloaded here:
+https://drive.google.com/drive/folders/0B64LWHmmBOcCN2M3NGM1NjktNjY1NS00NTUwLThmMzItOWI3ZGUzMmM4NmIz?resourcekey=0-OKWx1grTGaWG4rzGwH4FvA&usp=sharing
+
+Required to download from google drive:   htseq_table.csv -> csv containing htseq count output data
+                                          htseq_rawfusion_combined.csv -> count table containing the entire findings of both fusion genes and htseq count genes.

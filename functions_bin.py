@@ -1,22 +1,17 @@
 import pandas as pd
-from sklearn.datasets import make_classification
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.decomposition import PCA
+from sklearn.metrics import classification_report
 import matplotlib.pyplot as plt
+from sklearn.model_selection import KFold
+from sklearn.linear_model import Lasso
+from sklearn.model_selection import GridSearchCV
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import cross_val_score
-from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.svm import SVC
-from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import roc_curve
-from sklearn.svm import SVC
-from sklearn.linear_model import Lasso
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import cross_val_score
-from sklearn.model_selection import GridSearchCV
+from sklearn import metrics
 
 
 # Remove samples with total expression < 100000
@@ -38,6 +33,12 @@ def min_reads_filter(dataframe, sampleinfo):
     dropped_info = dropped_info.T
     return(dropped_table, dropped_info, dropped_samples)
 
+# Build confusion matrix:
+def build_cm(y_test, y_pred):
+    cm = confusion_matrix(y_test, y_pred)
+    accuracy = accuracy_score(y_test, y_pred)
+    return(cm,accuracy)
+
 # Normalize data to CPM and sqrt it
 def normalize_counttable(data):
     Total_counts = data.sum(axis=0)
@@ -56,11 +57,48 @@ def optimal_settings(output_feature_selection):
     max_depth = output_feature_selection["max_depth"]
     return (bootstrap, max_features, n_estimators, min_samples_leaf, min_samples_split, max_depth)
 
+# Gridsearch random forest
+def grid_search_rfc(dataset, sampleinfo, train_index, param_grid, model):
+    CV_rfc = GridSearchCV(estimator=model, param_grid=param_grid, cv= 5, verbose=1, n_jobs = -1)
+    x_train = dataset.T.loc[train_index]
+    y_train = sampleinfo.loc[train_index]
+    CV_rfc.fit(x_train, y_train.Binary_Group)
+    return(CV_rfc.best_params_)
+
 # Gridsearch for benchmark dataset
 def grid_search_rfc_benchmark(x_train, y_train, param_grid, model):
     CV_rfc = GridSearchCV(estimator=model, param_grid=param_grid, cv=5, verbose=1, n_jobs=-1)
     CV_rfc.fit(x_train, y_train.Binary_Group)
     return (CV_rfc.best_params_)
+
+# Optimal lasso selection regular dataset.
+def optimal_lasso_selection(set_alphas, CPM_table, group_info, split_size, iterations):
+    optimal_alpha = 0
+    optimal_features = 0
+    test_scores = []
+    lasso_output = pd.DataFrame()
+    features = pd.DataFrame()
+    print("Performing lasso feature selection with alphas " + str(set_alphas))
+    X_train, X_test, Y_train, Y_test = train_test_split(CPM_table.T, group_info.Binary_Group, test_size=split_size,
+                                                        stratify=group_info.Binary_Group, random_state=5)
+    for i in set_alphas:
+        lasso = Lasso(alpha=i, max_iter=iterations)
+        lasso.fit(X_train, Y_train)
+        train_score = lasso.score(X_train, Y_train)
+        test_score = lasso.score(X_test, Y_test)
+        coeff_used = np.sum(lasso.coef_ != 0)
+        test_scores.append(test_score)
+        if test_score >= optimal_alpha:
+            optimal_alpha = test_score
+            optimal_features = coeff_used
+            lasso_output = pd.DataFrame(lasso.coef_ != 0, index=CPM_table.index, columns=["Lasso"])
+            features = lasso_output[lasso_output.Lasso == True]
+
+    print("the best scoring test alpha selected was", optimal_alpha)
+    print("number of features selected:", optimal_features)
+    selected_optimal_features = CPM_table.loc[features.index]
+    return (selected_optimal_features, X_train, X_test, features, lasso, test_scores)
+
 
 # Lasso feature selection for NRG dataset
 def optimal_lasso_selection_NRG(set_alphas, X_train, Y_train, X_test, Y_test, iterations):
@@ -149,21 +187,61 @@ def plot_roc_accuracy_full(dataset, sample_info, best_settings, train_set, test_
     plt.savefig(filename)
 
     train_prd = cross_val_predict(rfc, X_train, y_train.Binary_Group, cv=KFold(X_train.shape[0]))
-    cm, Accuracy = functions.build_cm(y_train.Binary_Group, train_prd)
+    cm, Accuracy = build_cm(y_train.Binary_Group, train_prd)
     print("train set:")
     print(cm)
     print("Accuracy:", Accuracy)
 
     test_prd = rfc.predict(X_test)
-    cm, Accuracy = functions.build_cm(y_test.Binary_Group, test_prd)
+    cm, Accuracy = build_cm(y_test.Binary_Group, test_prd)
     print("test set:")
     print(cm)
     print("Accuracy:", Accuracy)
 
     validation_prd = rfc.predict(x_validation)
-    cm, Accuracy = functions.build_cm(y_validation.Binary_Group, validation_prd)
+    cm, Accuracy = build_cm(y_validation.Binary_Group, validation_prd)
     print("validation set matrix/accuracy:")
     print(cm)
     print("Accuracy:", Accuracy)
 
 
+# SVM gridsearch:
+def SVM_gridsearch(X_train, y_train, X_test, y_test, X_val, y_val, param_grid, scores):
+    scores = ['precision', 'recall']
+    # 'recall',
+    for score in scores:
+        print("# Tuning hyper-parameters for %s" % score)
+        print()
+
+        clf = GridSearchCV(SVC(probability=True), param_grid, scoring='%s_macro' % score,
+                           cv=10, verbose=1, n_jobs=-1)
+        clf.fit(X_train, y_train)
+
+        print("Best parameters set found on development set:")
+        print()
+        print(clf.best_params_)
+        print()
+        print("Grid scores on development set:")
+        print()
+        print("Detailed classification report:")
+        print()
+        print("The model is trained on the full development set.")
+        print("The scores are computed on the full evaluation set.")
+        print()
+        y_true, y_pred = y_test, clf.predict(X_test)
+        print(classification_report(y_true, y_pred))
+        print()
+
+        print()
+        cm, Accuracy = build_cm(y_true, y_pred)
+        print("testing confusion matrix:")
+        print(cm)
+        print(Accuracy)
+
+        print()
+        print("training confusion matrix:")
+        y_true, y_pred = y_train, clf.predict(X_train)
+        cm, Accuracy = build_cm(y_true, y_pred)
+        print(cm)
+        print(Accuracy)
+    return (clf)

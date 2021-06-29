@@ -84,13 +84,24 @@ test_scores_htseq = functions_bin.optimal_lasso_selection(lassos_htseq, htseq_tr
 combined_features = lasso_htseq_feature_table.append(fusion_feature_table)
 
 sample_info_test = sample_info.loc[test_set.index]
+# Find best modeling settings for htseq genes + fusion genes
+best_settings_gridsearch_combined, model_combined = functions_bin.grid_search_rfc(combined_features, sample_info_test,
+                                                         train_set.index, param_grid_rfc, rfc)
 # Find best modeling settings for htseq genes
-best_settings_gridsearch_combined = functions_bin.grid_search_rfc(combined_features, sample_info_test,
+best_settings_gridsearch_htseq, model_htseq = functions_bin.grid_search_rfc(lasso_htseq_feature_table, sample_info_test,
                                                          train_set.index, param_grid_rfc, rfc)
-# Find best modeling settings for htseq + fusion genes
-best_settings_gridsearch_htseq = functions_bin.grid_search_rfc(lasso_htseq_feature_table, sample_info_test,
-                                                         train_set.index, param_grid_rfc, rfc)
-
+# Generate ROC curves and confusion matrixes for fusion and
+print("performign analysis on dataset htseq + fusion genes")
 functions_bin.plot_roc_accuracy_full(combined_features, sample_info, best_settings_gridsearch_combined, train_set, test_set, validation_set, "htseq_fusion_ROC.png")
+print("peforming analysis on dataset htseq genes")
 functions_bin.plot_roc_accuracy_full(lasso_htseq_feature_table, sample_info, best_settings_gridsearch_htseq, train_set, test_set, validation_set, "Htseq_ROC.png")
 
+from matplotlib import pyplot
+from matplotlib.pyplot import figure
+combined_importances = model_combined.feature_importances_
+htseq_importances = model_htseq.feature_importances_
+xlabels_combined = combined_features.T.index
+xlabels_htseq = lasso_htseq_feature_table.T.index
+
+functions_bin.plot_feature_importance(combined_importances, xlabels_combined, "feature_importance_combined.png")
+functions_bin.plot_feature_importance(htseq_importances, xlabels_htseq, "feature_importance_htseq.png")

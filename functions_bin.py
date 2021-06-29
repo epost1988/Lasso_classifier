@@ -63,7 +63,7 @@ def grid_search_rfc(dataset, sampleinfo, train_index, param_grid, model):
     x_train = dataset.T.loc[train_index]
     y_train = sampleinfo.loc[train_index]
     CV_rfc.fit(x_train, y_train.Binary_Group)
-    return(CV_rfc.best_params_)
+    return(CV_rfc.best_params_, CV_rfc)
 
 # Gridsearch for benchmark dataset
 def grid_search_rfc_benchmark(x_train, y_train, param_grid, model):
@@ -245,3 +245,11 @@ def SVM_gridsearch(X_train, y_train, X_test, y_test, X_val, y_val, param_grid, s
         print(cm)
         print(Accuracy)
     return (clf)
+
+# Plot feature importance RFC model
+def plot_feature_importance(importances, xlabels, figname):
+    x_axis_range = range(len(importances))
+    pyplot.bar([x for x in range(len(importances))], importances)
+    pyplot.xticks(x_axis_range, xlabels, rotation='vertical')
+    pyplot.rcParams["figure.figsize"] = (15, 15)
+    pyplot.savefig(str(figname))

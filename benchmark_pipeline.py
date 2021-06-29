@@ -21,8 +21,7 @@ benchmark_sampleinfo.insert(1, "Binary_Group", binary_groups_benchmark, True)
 CPM_benchmark_counts = functions_bin.normalize_counttable(benchmark_counts)
 
 # Split samples as performed by N Sol
-x_train_bench, y_train_bench, x_test_bench, y_test_bench, x_val_bench, y_val_bench = data_collection.loading_NRG_tables(
-    CPM_benchmark_counts, benchmark_sampleinfo)
+x_train_bench, y_train_bench, x_test_bench, y_test_bench, x_val_bench, y_val_bench = data_collection.loading_NRG_tables(CPM_benchmark_counts, benchmark_sampleinfo)
 
 # search for optimal number of features.
 alphas = np.arange(0.00001, 0.0001, 0.00001)
@@ -39,7 +38,7 @@ param_grid = {
 }
 
 # Filter lasso genes result from CPM table to respective groups.
-lasso_CPM = CPM_benchmark_counts.loc[Benchmark_lasso_features.index]
+lasso_CPM = CPM_benchmark_counts.T.loc[Benchmark_lasso_features.index]
 x_train_bench_lasso = x_train_bench.T.loc[Benchmark_lasso_features.index]
 x_test_bench_lasso = x_train_bench.T.loc[Benchmark_lasso_features.index]
 x_val_bench_lasso = x_val_bench.T.loc[Benchmark_lasso_features.index]

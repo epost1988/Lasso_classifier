@@ -12,6 +12,20 @@ from sklearn.svm import SVC
 from sklearn.model_selection import cross_val_predict
 from sklearn.metrics import roc_curve
 from sklearn import metrics
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+
+# Add binary group to sampleinfo file.
+def binarize_sampleinfo(sample_info):
+    lb = LabelEncoder()
+    try:
+        binary_step1 = lb.fit_transform(sample_info)
+        binary_step2 = sample_info
+        binary_step2.insert(1, "Binary_Group", binary_step1, True)
+        sample_info = binary_step2.loc[sample_info.index]
+    except ValueError:
+        pass
+    return(sample_info)
 
 
 # Remove samples with total expression < 100000
@@ -43,7 +57,7 @@ def build_cm(y_test, y_pred):
 def normalize_counttable(data):
     Total_counts = data.sum(axis=0)
     data_CPM = data.loc[:,Total_counts.index].div(Total_counts)*1000000
-    normalized_table = data_CPM.apply(np.sqrt).fillna(0)
+    normalized_table = data_CPM.T.apply(np.sqrt).fillna(0)
     return(normalized_table)
 
 
@@ -71,60 +85,34 @@ def grid_search_rfc_benchmark(x_train, y_train, param_grid, model):
     CV_rfc.fit(x_train, y_train.Binary_Group)
     return (CV_rfc.best_params_)
 
-# Optimal lasso selection regular dataset.
+# Loop for optimal lasso generation.
 def optimal_lasso_selection(set_alphas, CPM_table, group_info, split_size, iterations):
     optimal_alpha = 0
     optimal_features = 0
     test_scores = []
     lasso_output = pd.DataFrame()
     features = pd.DataFrame()
-    print("Performing lasso feature selection with alphas " + str(set_alphas))
-    X_train, X_test, Y_train, Y_test = train_test_split(CPM_table.T, group_info.Binary_Group, test_size=split_size,
-                                                        stratify=group_info.Binary_Group, random_state=5)
+    X_train, X_test, Y_train, Y_test = train_test_split(CPM_table.T, group_info.Binary_Group, test_size = split_size, stratify = group_info.Binary_Group, random_state = 5)
     for i in set_alphas:
-        lasso = Lasso(alpha=i, max_iter=iterations)
+        print("Performing lasso feature selection with alpha " + str(i))
+        lasso = Lasso(alpha=i, max_iter = iterations)
         lasso.fit(X_train, Y_train)
         train_score = lasso.score(X_train, Y_train)
         test_score = lasso.score(X_test, Y_test)
-        coeff_used = np.sum(lasso.coef_ != 0)
+        coeff_used = np.sum(lasso.coef_!=0)
         test_scores.append(test_score)
         if test_score >= optimal_alpha:
             optimal_alpha = test_score
+            optimal_alpha_value = i
             optimal_features = coeff_used
-            lasso_output = pd.DataFrame(lasso.coef_ != 0, index=CPM_table.index, columns=["Lasso"])
+            lasso_output = pd.DataFrame(lasso.coef_!=0, index=CPM_table.index, columns=["Lasso"])
             features = lasso_output[lasso_output.Lasso == True]
-
-    print("the best scoring test alpha selected was", optimal_alpha)
+    
+    print("the best scoring test alpha selected was", optimal_alpha_value)
+    print("test score acquired =", optimal_alpha)
     print("number of features selected:", optimal_features)
     selected_optimal_features = CPM_table.loc[features.index]
-    return (selected_optimal_features, X_train, X_test, features, lasso, test_scores)
-
-
-# Lasso feature selection for NRG dataset
-def optimal_lasso_selection_NRG(set_alphas, X_train, Y_train, X_test, Y_test, iterations):
-    optimal_alpha = -10
-    optimal_features = 0
-    test_scores = []
-    lasso_output = pd.DataFrame()
-    features = pd.DataFrame()
-    print("Performing lasso feature selection with alphas " + str(set_alphas))
-    for i in set_alphas:
-        lasso = Lasso(alpha=i, max_iter=iterations)
-        lasso.fit(X_train, Y_train)
-        train_score = lasso.score(X_train, Y_train)
-        test_score = lasso.score(X_test, Y_test)
-        coeff_used = np.sum(lasso.coef_ != 0)
-        test_scores.append(test_score)
-        if test_score >= optimal_alpha:
-            optimal_alpha = test_score
-            optimal_features = coeff_used
-            lasso_output = pd.DataFrame(lasso.coef_ != 0, index=X_train.T.index, columns=["Lasso"])
-            features = lasso_output[lasso_output.Lasso == True]
-
-    print("the best scoring test alpha selected was", optimal_alpha)
-    print("number of features selected:", optimal_features)
-    selected_optimal_features = X_train.T.loc[features.index]
-    return (selected_optimal_features)
+    return(selected_optimal_features, X_train, X_test, features, lasso, test_scores)
 
 # ROC plotting. Includes LOOCV for training validation.
 def plot_roc_accuracy_full(dataset, sample_info, best_settings, train_set, test_set, validation_set, filename):
@@ -206,50 +194,95 @@ def plot_roc_accuracy_full(dataset, sample_info, best_settings, train_set, test_
 
 
 # SVM gridsearch:
-def SVM_gridsearch(X_train, y_train, X_test, y_test, X_val, y_val, param_grid, scores):
-    scores = ['precision', 'recall']
-    # 'recall',
-    for score in scores:
-        print("# Tuning hyper-parameters for %s" % score)
+def SVC_plot_ROC(model, X_train, X_test, X_val, y_train, y_test, y_val))
+    try:
+        train_proba = cross_val_predict(model.best_estimator_, X_train, y_train.Binary_Group, cv = KFold(X_train.shape[0]), method="predict_proba")
+        train_proba = train_proba[:,1]
+        train_prd = cross_val_predict(model.best_estimator_, X_train, y_train.Binary_Group, cv = KFold(X_train.shape[0]))
+        fpr, tpr, threshold = roc_curve(y_train.Binary_Group, train_proba)
+        roc_auc = metrics.auc(fpr, tpr)
+        plt.title('Receiver Operating Characteristic')
+        plt.plot(fpr, tpr, 'b', label = 'AUC Training = %0.3f' % roc_auc)
+        plt.legend(loc = 'lower right')
+        plt.plot([0, 1], [0, 1],'r--')
+        plt.xlim([-0.01, 1])
+        plt.ylim([0, 1.01])
+        plt.ylabel('True Positive Rate')
+        plt.xlabel('False Positive Rate')
+    
+        proba = model_htseq.predict_proba(X_test)
+        proba = proba[:,1]
+        fpr2, tpr2, threshold = roc_curve(y_test.Binary_Group, proba)
+        roc_auc = metrics.auc(fpr2, tpr2)
+    
+        plt.title('Receiver Operating Characteristic')
+        plt.plot(fpr2, tpr2, 'r', label = 'AUC Test = %0.3f' % roc_auc)
+        plt.legend(loc = 'lower right')
+        plt.plot([0, 1], [0, 1],'r--')
+        plt.xlim([-0.01, 1])
+        plt.ylim([0, 1.01])
+        plt.ylabel('True Positive Rate')
+        plt.xlabel('False Positive Rate')
+        
+        validation_proba = model_htseq.predict_proba(X_val)
+        validation_proba = validation_proba[:,1]
+        fpr3, tpr3, threshold = roc_curve(y_val.Binary_Group, validation_proba)
+        roc_auc = metrics.auc(fpr3, tpr3)
+        
+        plt.title('Receiver Operating Characteristic')
+        plt.plot(fpr3, tpr3, 'g', label = 'AUC validation = %0.3f' % roc_auc)
+        plt.legend(loc = 'lower right')
+        plt.plot([0, 1], [0, 1],'r--')
+        plt.xlim([-0.01, 1])
+        plt.ylim([0, 1.01])
+        plt.ylabel('True Positive Rate')
+        plt.xlabel('False Positive Rate')
+        plt.savefig('SVM_ROC-Curve.png')
+        plt.show()
         print()
-
-        clf = GridSearchCV(SVC(probability=True), param_grid, scoring='%s_macro' % score,
-                           cv=10, verbose=1, n_jobs=-1)
-        clf.fit(X_train, y_train)
-
-        print("Best parameters set found on development set:")
-        print()
-        print(clf.best_params_)
-        print()
-        print("Grid scores on development set:")
-        print()
-        print("Detailed classification report:")
-        print()
-        print("The model is trained on the full development set.")
-        print("The scores are computed on the full evaluation set.")
-        print()
-        y_true, y_pred = y_test, clf.predict(X_test)
-        print(classification_report(y_true, y_pred))
-        print()
-
-        print()
-        cm, Accuracy = build_cm(y_true, y_pred)
-        print("testing confusion matrix:")
+        #train_prd = model_htseq_fusion.predict(X_train)
+        cm, Accuracy = functions.build_cm(y_train.Binary_Group, train_prd)
+        print("train set matrix/accuracy:")
         print(cm)
-        print(Accuracy)
-
+        print("Accuracy:", Accuracy)
         print()
-        print("training confusion matrix:")
-        y_true, y_pred = y_train, clf.predict(X_train)
-        cm, Accuracy = build_cm(y_true, y_pred)
+        test_prd = model_htseq.predict(X_test)
+        cm, Accuracy = functions.build_cm(y_test.Binary_Group, test_prd)
+        print("test set matrix/accuracy:")
         print(cm)
-        print(Accuracy)
-    return (clf)
-
+        print("Accuracy:",Accuracy)
+        print()
+        validation_prd = model_htseq.predict(X_val)
+        cm, Accuracy = functions.build_cm(y_val.Binary_Group, validation_prd)
+        print("validation set matrix/accuracy:")
+        print(cm)
+        print("Accuracy:",Accuracy)
+    
+    except KeyError:
+        pass
 # Plot feature importance RFC model
 def plot_feature_importance(importances, xlabels, figname):
+    fig = pyplot.figure(figsize=(15,8))
     x_axis_range = range(len(importances))
-    pyplot.bar([x for x in range(len(importances))], importances)
-    pyplot.xticks(x_axis_range, xlabels, rotation='vertical')
-    pyplot.rcParams["figure.figsize"] = (15, 15)
-    pyplot.savefig(str(figname))
+    plt.bar([x for x in range(len(importances))], importances)
+    plt.xticks(x_axis_range, xlabels, rotation='vertical')
+    plt.rcParams["figure.figsize"] = (15, 15)
+    plt.savefig(str(figname))
+
+
+# Remove uninformative features for fusion genes
+def select_feature_expression(data, n, percentage):
+    print("selecting features with minimal CPM count:", n)
+    print("and present in", percentage, "% of samples")
+    datafile = data.T
+    #datafile = data
+    output = []
+    for name in datafile:
+        output.append(len(datafile[datafile[name]>n]))
+    Filtered = pd.DataFrame(output)
+    Filtered = Filtered.set_index(data.index)
+    Filtered = Filtered.loc[Filtered[0]>(len(data.columns)*percentage)]
+    return (Filtered, output)
+
+
+
